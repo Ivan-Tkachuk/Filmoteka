@@ -7,12 +7,15 @@ const libraryListRef = document.querySelector('.library_list');
 const watchedLibraryBtn = document.querySelector('.js-watched');
 const queueLibraryBtn = document.querySelector('.js-queue');
 
+let scrollEventListener = null;
+
+
 onWatchedLibraryBtnClick();
 
 watchedLibraryBtn.addEventListener('click', onWatchedLibraryBtnClick);
 queueLibraryBtn.addEventListener('click', onQueueLibraryBtnClick);
 closeModalBtn.addEventListener('click', updateLibraryMarkup);
-document.addEventListener('keydown', event => closeModalOnEscape(event));
+document.addEventListener('keyup', event => closeModalOnEscape(event));
 backdgop.addEventListener('click', event => closeModalOnbackDrop(event));
 
 function onWatchedLibraryBtnClick() {
@@ -112,76 +115,108 @@ async function fetchLibraryMovieByID(id) {
   return data;
 }
 
+
 function updateLibraryMarkup() {
   const parsedWatchedFilms = JSON.parse(localStorage.getItem('watchedList'));
   const parsedQueueFilms = JSON.parse(localStorage.getItem('queueList'));
 
-  if (!parsedWatchedFilms || parsedWatchedFilms.length === 0) {
+  const watchedFilmsEmpty = !parsedWatchedFilms || parsedWatchedFilms.length === 0;
+  const queueFilmsEmpty = !parsedQueueFilms || parsedQueueFilms.length === 0;
+
+  let showEmptyLibrary = false;
+
+
+  if (watchedLibraryBtn.classList.contains('active-button') && watchedFilmsEmpty) {
+    showEmptyLibrary = true;
+  } else if (queueLibraryBtn.classList.contains('active-button') && queueFilmsEmpty) {
+    showEmptyLibrary = true;
+  }
+
+  if (showEmptyLibrary) {
     libraryListRef.innerHTML = '';
     emptyLibraryContaineRef.style.display = 'block';
-  }
-  //
-  else if (!parsedQueueFilms || parsedQueueFilms.length === 0) {
-    libraryListRef.innerHTML = '';
-    emptyLibraryContaineRef.style.display = 'block';
-  }
-  //
-  else if (
-    watchedLibraryBtn.classList.contains('active-button') &&
-    parsedWatchedFilms.length > 0
-  ) {
+  } else {
     emptyLibraryContaineRef.style.display = 'none';
     libraryListRef.innerHTML = '';
-    infinityScroll(parsedWatchedFilms)
-  }
-  //
-  else if (
-    queueLibraryBtn.classList.contains('active-button') &&
-    parsedQueueFilms.length > 0
-  ) {
-    emptyLibraryContaineRef.style.display = 'none';
-    libraryListRef.innerHTML = '';
-    infinityScroll(parsedQueueFilms);
+
+    if (watchedLibraryBtn.classList.contains('active-button')) {
+      console.log('parsedWatchedFilms', parsedWatchedFilms)
+      infinityScroll(parsedWatchedFilms);
+    } else if (queueLibraryBtn.classList.contains('active-button')) {
+      console.log('parsedQueueFilms', parsedQueueFilms)
+      infinityScroll(parsedQueueFilms);
+    }
   }
 }
 
+
 function closeModalOnEscape(event) {
-  if (event.key !== 'Escape') {
+  if (event.code !== 'Escape') {
     return;
   }
-
-  updateLibraryMarkup();
+    removeScrollListener();
+    updateLibraryMarkup();
 }
 
 function closeModalOnbackDrop(event) {
   if (event.target === event.currentTarget) {
+    removeScrollListener();
     updateLibraryMarkup();
   }
 }
 
-function infinityScroll(parsedFilms) {
-  console.log(parsedFilms);
-  let dynamicStart = 0;
-  let dynamicEnd = 9;
-  let slicedMoviesArr = parsedFilms.slice(dynamicStart, dynamicEnd);
-  document.addEventListener('scroll', function() {
-    if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight) {
-      for (let i = dynamicStart; dynamicStart < dynamicEnd; i++) {
-        dynamicStart += 9;
-        dynamicEnd += 9;
-        slicedMoviesArr = parsedFilms.slice(dynamicStart, dynamicEnd);
-        if (dynamicEnd >= parsedFilms.length) break;
-      }
-      slicedMoviesArr.map(id => {
-        return fetchLibraryMovieByID(id).then(data => {
-          createMovieLibraryMarkup(data);
-        });
-      });
-    }
-  });
-  slicedMoviesArr.map(id => {
-    return fetchLibraryMovieByID(id).then(data => {
-      createMovieLibraryMarkup(data);
-    });
-  });
+
+function removeScrollListener() {
+  if (scrollEventListener) {
+    document.removeEventListener('scroll', scrollEventListener);
+    scrollEventListener = null;
+  }
 }
+
+function infinityScroll(parsedFilms) {
+  let dynamicStart = 0;
+  const batchSize = 9;
+  
+  removeScrollListener();
+
+  function loadMoreMovies() {
+    const scrollPosition = window.innerHeight + window.scrollY + 1;
+    const pageHeight = document.body.offsetHeight;
+
+    // Перевіримо, чи доскролили до кінця сторінки і ще є фільми для завантаження
+    if (scrollPosition >= pageHeight && dynamicStart < parsedFilms.length) {
+      loadNextBatch();
+    }
+  }
+  // Додамо власну функцію, яка буде догружати фільми в окремому блоку
+  function loadNextBatch() {
+    const dynamicEnd = Math.min(dynamicStart + batchSize, parsedFilms.length);
+    const slicedMoviesArr = parsedFilms.slice(dynamicStart, dynamicEnd);
+
+    slicedMoviesArr.forEach((id) => {
+      fetchLibraryMovieByID(id).then((data) => {
+        createMovieLibraryMarkup(data);
+      });
+    });
+
+    dynamicStart += batchSize;
+
+        if (dynamicStart < parsedFilms.length) {
+      document.addEventListener('scroll', loadMoreMovies);
+    }
+
+    // console.log('parsedFilms.length', parsedFilms.length);
+    // console.log('dynamicStart', dynamicStart);
+  }
+
+
+  function addScrollListener() {
+    scrollEventListener = loadMoreMovies;
+    document.addEventListener('scroll', scrollEventListener);
+  }
+
+  addScrollListener();
+  loadNextBatch();
+}
+
+
